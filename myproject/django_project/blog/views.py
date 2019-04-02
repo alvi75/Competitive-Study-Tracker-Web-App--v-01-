@@ -1,4 +1,4 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect, reverse
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import User
 from django.views.generic import (
@@ -8,7 +8,9 @@ from django.views.generic import (
     UpdateView,
     DeleteView
 )
-from .models import Post
+from .models import Post, Comment
+from .forms import CommentForm
+from pprint import pprint
 
 
 def home(request):
@@ -39,6 +41,19 @@ class UserPostListView(ListView):
 
 class PostDetailView(DetailView):
     model = Post
+    form_class = CommentForm
+
+    def form_valid(self, form):
+        form.instance.author = self.request.user
+        form.instance.post = Post.objects.filter(pk=self.kwargs.get('pk'))[0]
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super(PostDetailView, self).get_context_data(**kwargs)
+        post = Post.objects.filter(pk=self.kwargs.get('pk'))[0]
+        context['comment_list'] = Comment.objects.filter(
+            post=post).order_by('date_commented')
+        return context
 
 
 class PostCreateView(LoginRequiredMixin, CreateView):
@@ -78,3 +93,44 @@ class PostDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
 
 def about(request):
     return render(request, 'blog/about.html', {'title': 'About'})
+
+
+class CommentCreateView(LoginRequiredMixin, CreateView):
+    model = Comment
+    fields = ['content', ]
+
+    def form_valid(self, form):
+        form.instance.author = self.request.user
+        a = Post.objects.filter(pk=self.kwargs.get('pk'))
+        form.instance.post = a.first()
+        return super().form_valid(form)
+
+
+class CommentUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Comment
+    fields = ['content', ]
+
+    def form_valid(self, form):
+        form.instance.author = self.request.user
+        form.instance.post = Post.objects.filter(pk=self.kwargs.get('pk1'))[0]
+        return super().form_valid(form)
+
+    def test_func(self):
+        comment = self.get_object()
+        if self.request.user == comment.author:
+            return True
+        return False
+
+
+class CommmentDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
+    model = Comment
+
+    def test_func(self):
+        comment = self.get_object()
+        if self.request.user == comment.author:
+            return True
+        return False
+
+    def get_success_url(self):
+        p = self.kwargs.get('pk1')
+        return reverse('post-detail', kwargs={'pk': p})
